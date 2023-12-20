@@ -1,6 +1,8 @@
-local lp = love.physics
+local lp, table, tostring, ipairs = love.physics, table, tostring, ipairs
 
-local function removeDestroyed (t)
+---@param t love.Joint[]|love.Body[]|love.Fixture[]
+---@return love.Joint[]|love.Body[]|love.Fixture[]
+local function removeDestroyed(t)
     if not t then return {} end
     for i = #t, 1, -1 do
         if t[i]:isDestroyed() then
@@ -12,41 +14,42 @@ end
 
 -- Shape
 
-local function ChainShape (t)
+local function ChainShape(t)
     local shape = lp.newChainShape(false, t.points)
     shape:setNextVertex(t.nextVertex[1], t.nextVertex[2])
     shape:setPreviousVertex(t.previousVertex[1], t.previousVertex[2])
     return shape
 end
 
-local function CircleShape (t)
+local function CircleShape(t)
     return lp.newCircleShape(t.point[1], t.point[2], t.radius)
 end
 
-local function EdgeShape (t)
+local function EdgeShape(t)
     return lp.newEdgeShape(t.points[1], t.points[2], t.points[3], t.points[4])
 end
 
-local function PolygonShape (t)
+local function PolygonShape(t)
     return lp.newPolygonShape(t.points)
 end
 
 local shapeByType = {
-    chain = ChainShape, 
+    chain = ChainShape,
     circle = CircleShape,
     edge = EdgeShape,
     polygon = PolygonShape,
 }
 
-local function Shape (t, body)
+local function Shape(t, body)
     local shape = shapeByType[t.type](t, body)
-    
+
     t.shape = shape
-    
+
     return shape
 end
 
-local function ChainShapeState (shape)
+---@param shape love.Shape|love.ChainShape
+local function ChainShapeState(shape)
     return {
         points = { shape:getPoints() },
         nextVertex = { shape:getNextVertex() },
@@ -54,68 +57,73 @@ local function ChainShapeState (shape)
     }
 end
 
-local function CircleShapeState (shape)
+---@param shape love.Shape|love.CircleShape
+local function CircleShapeState(shape)
     return {
         point = { shape:getPoint() },
         radius = shape:getRadius(),
     }
 end
 
-local function EdgeShapeState (shape)
+---@param shape love.Shape|love.EdgeShape
+local function EdgeShapeState(shape)
     return {
         points = { shape:getPoints() },
     }
 end
 
-local function PolygonShapeState (shape)
+---@param shape love.Shape|love.PolygonShape
+local function PolygonShapeState(shape)
     return {
         points = { shape:getPoints() },
     }
 end
 
 local shapeStateByType = {
-    chain = ChainShapeState, 
+    chain = ChainShapeState,
     circle = CircleShapeState,
     edge = EdgeShapeState,
     polygon = PolygonShapeState,
 }
 
-local function ShapeState (shape)
+---@param shape love.Shape
+local function ShapeState(shape)
     local shapeType = shape:getType()
     local t = shapeStateByType[shapeType](shape)
-    
+
     t.type = shapeType
-    
+
     return t
 end
 
 -- Fixture
 
-local function Fixture (t, body)
+local function Fixture(t, body)
     local shape = Shape(t.shapeState)
     local fixture = lp.newFixture(body, shape)
-    
-    fixture:setCategory(t.category)
+
+    fixture:setCategory(t.category[1], t.category[2])
     fixture:setDensity(t.density)
     fixture:setFilterData(t.filterData[1], t.filterData[2], t.filterData[3])
     fixture:setFriction(t.friction)
     fixture:setGroupIndex(t.groupIndex)
-    fixture:setMask(t.mask)
+    fixture:setMask(t.mask[1], t.mask[2])
     fixture:setRestitution(t.restitution)
     fixture:setSensor(t.sensor)
     fixture:setUserData(t.userData)
-    
+
     body:resetMassData()
-    
+
     t.fixture = fixture
-    
+
     return fixture
 end
 
-local function FixtureState (fixture)
+---@param fixture love.Fixture
+local function FixtureState(fixture)
     return {
         id = tostring(fixture),
-        category = fixture:getCategory(),
+        category = { fixture:getCategory() },
         density = fixture:getDensity(),
         filterData = { fixture:getFilterData() }, -- categories, mask, group
         friction = fixture:getFriction(),
@@ -124,14 +132,14 @@ local function FixtureState (fixture)
         restitution = fixture:getRestitution(),
         sensor = fixture:isSensor(),
         userData = fixture:getUserData(),
-        
+
         shapeState = ShapeState(fixture:getShape()),
     }
 end
 
 -- Body
 
-local function Body (t, world)
+local function Body(t, world)
     local body = lp.newBody(world, t.x, t.y, t.type)
 
     body:setActive(t.active)
@@ -148,29 +156,31 @@ local function Body (t, world)
     body:setMass(t.mass)
     -- body:setMassData(t.massData[1], t.massData[2], t.massData[3], t.massData[4])
     body:setSleepingAllowed(t.sleepingAllowed)
-    --body:setType(t.type)
+    -- body:setType(t.type)
     body:setUserData(t.userData)
     --body:setX(t.x)
     --body:setY(t.y)
-    
+
     for i, fixtureState in ipairs(t.fixtureStates) do
         Fixture(fixtureState, body)
     end
-    
+
     t.body = body
-    
+
     return body
 end
 
-local function BodyState (body)
+---@param body love.Body
+local function BodyState(body)
     local fixtureStates = {}
-    
-    local fixtures = removeDestroyed(body:getFixtureList())
-    
+
+	---@type love.Fixture[]
+    local fixtures = removeDestroyed(body:getFixtures())
+
     for i, fixture in ipairs(fixtures) do
         fixtureStates[i] = FixtureState(fixture)
     end
-    
+
     return {
         id = tostring(body),
         -- members
@@ -200,66 +210,66 @@ end
 
 -- Joint
 
-local function DistanceJoint (t, bodyMap, jointMap)
+local function DistanceJoint(t, bodyMap, jointMap)
     -- body1, body2, x1, y1, x2, y2, collideConnected
     local joint = lp.newDistanceJoint(
         bodyMap[t.bodies[1]].body, bodyMap[t.bodies[2]].body,
         t.anchors[1], t.anchors[2], t.anchors[3], t.anchors[4],
         t.collideConnected)
-        
+
     joint:setDampingRatio(t.dampingRatio)
     joint:setFrequency(t.frequency)
     joint:setLength(t.length)
-    
+
     return joint
 end
 
-local function FrictionJoint (t, bodyMap, jointMap)
+local function FrictionJoint(t, bodyMap, jointMap)
     -- body1, body2, x1, y1, x2, y2, collideConnected
     local joint = lp.newFrictionJoint(
         bodyMap[t.bodies[1]].body, bodyMap[t.bodies[2]].body,
         t.anchors[1], t.anchors[2], t.anchors[3], t.anchors[4],
         t.collideConnected)
-        
+
     joint:setMaxForce(t.maxForce)
     joint:setMaxTorque(t.maxTorque)
-    
+
     return joint
 end
 
-local function GearJoint (t, bodyMap, jointMap)
+local function GearJoint(t, bodyMap, jointMap)
     -- nyi
 end
 
-local function MotorJoint (t, bodyMap, jointMap)
+local function MotorJoint(t, bodyMap, jointMap)
     -- body1, body2, correctionFactor, collideConnected
     local joint = lp.newMotorJoint(
         bodyMap[t.bodies[1]].body, bodyMap[t.bodies[2]].body,
         t.correctionFactor,
         t.collideConnected)
-        
+
     joint:setAngularOffset(t.angularOffset)
     joint:setLinearOffset(t.linearOffset[1], t.linearOffset[2])
-    joint:setMaxForce(t.maxForce)
-    joint:setMaxTorque(t.maxTorque)
-    
+    -- joint:setMaxForce(t.maxForce)
+    -- joint:setMaxTorque(t.maxTorque)
+
     return joint
 end
 
-local function MouseJoint (t, bodyMap, jointMap)
+local function MouseJoint(t, bodyMap, jointMap)
     -- body, x, y
     local joint = lp.newMouseJoint(
         bodyMap[t.bodies[1]].body,
         t.target[1], t.target[2])
-        
+
     joint:setDampingRatio(t.dampingRatio)
     joint:setFrequency(t.frequency)
     joint:setMaxForce(t.maxForce)
-    
+
     return joint
 end
 
-local function PrismaticJoint (t, bodyMap, jointMap)
+local function PrismaticJoint(t, bodyMap, jointMap)
     -- body1, body2, x1, y1, x2, y2, ax, ay, collideConnected, referenceAngle
     local joint = lp.newPrismaticJoint(
         bodyMap[t.bodies[1]].body, bodyMap[t.bodies[2]].body,
@@ -273,11 +283,11 @@ local function PrismaticJoint (t, bodyMap, jointMap)
     joint:setMotorSpeed(t.motorSpeed)
     joint:setUpperLimit(t.upperLimit)
     joint:setLimitsEnabled(t.limitsEnabled)
-    
+
     return joint
 end
 
-local function PulleyJoint (t, bodyMap, jointMap)
+local function PulleyJoint(t, bodyMap, jointMap)
     -- body1, body2, gx1, gy1, gx2, gy2, x1, y1, x2, y2, ratio, collideConnected
     local joint = lp.newPulleyJoint(
         bodyMap[t.bodies[1]].body, bodyMap[t.bodies[2]].body,
@@ -286,52 +296,52 @@ local function PulleyJoint (t, bodyMap, jointMap)
         t.anchors[1], t.anchors[2], t.anchors[3], t.anchors[4],
         t.ratio,
         t.collideConnected)
-    
+
     return joint
 end
 
-local function RevoluteJoint (t, bodyMap, jointMap)
+local function RevoluteJoint(t, bodyMap, jointMap)
     -- body1, body2, x1, y1, x2, y2, collideConnected, referenceAngle
     local joint = lp.newRevoluteJoint(
         bodyMap[t.bodies[1]].body, bodyMap[t.bodies[2]].body,
         t.anchors[1], t.anchors[2], t.anchors[3], t.anchors[4],
         t.collideConnected, t.referenceAngle)
-    
+
     joint:setLowerLimit(t.lowerLimit)
     joint:setMaxMotorTorque(t.maxMotorTorque)
     joint:setMotorEnabled(t.motorEnabled)
     joint:setMotorSpeed(t.motorSpeed)
     joint:setUpperLimit(t.upperLimit)
     joint:setLimitsEnabled(t.limitsEnabled)
-    
+
     return joint
 end
 
-local function RopeJoint (t, bodyMap, jointMap)
+local function RopeJoint(t, bodyMap, jointMap)
     -- body1, body2, x1, y1, x2, y2, maxLength, collideConnected
     local joint = lp.newRopeJoint(
         bodyMap[t.bodies[1]].body, bodyMap[t.bodies[2]].body,
         t.anchors[1], t.anchors[2], t.anchors[3], t.anchors[4],
         t.maxLength,
         t.collideConnected)
-    
+
     return joint
 end
 
-local function WeldJoint (t, bodyMap, jointMap)
+local function WeldJoint(t, bodyMap, jointMap)
     -- body1, body2, x1, y1, x2, y2, collideConnected, referenceAngle
     local joint = lp.newWeldJoint(
         bodyMap[t.bodies[1]].body, bodyMap[t.bodies[2]].body,
         t.anchors[1], t.anchors[2], t.anchors[3], t.anchors[4],
         t.collideConnected, t.referenceAngle)
-    
+
     joint:setDampingRatio(t.dampingRatio)
     joint:setFrequency(t.frequency)
-    
+
     return joint
 end
 
-local function WheelJoint (t, bodyMap, jointMap)
+local function WheelJoint(t, bodyMap, jointMap)
     -- body1, body2, x1, y1, x2, y2, ax, ay, collideConnected
     local joint = lp.newWheelJoint(
         bodyMap[t.bodies[1]].body, bodyMap[t.bodies[2]].body,
@@ -344,12 +354,12 @@ local function WheelJoint (t, bodyMap, jointMap)
     joint:setMotorSpeed(t.motorSpeed)
     joint:setSpringDampingRatio(t.springDampingRatio)
     joint:setSpringFrequency(t.springFrequency)
-    
+
     return joint
 end
 
 local jointByType = {
-    distance = DistanceJoint, 
+    distance = DistanceJoint,
     friction = FrictionJoint,
     gear = GearJoint,
     motor = MotorJoint,
@@ -362,19 +372,24 @@ local jointByType = {
     wheel = WheelJoint,
 }
 
-local function Joint (t, bodyMap, jointMap)
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function Joint(t, bodyMap, jointMap)
     local joint = jointByType[t.type](t, bodyMap, jointMap)
-    
+
     joint:setUserData(t.userData)
-    
+
     t.joint = joint
-    
+
     return joint
 end
 
 -- create joint states by joint type
 
-local function DistanceJointState (joint, bodyMap, jointMap)
+---@param joint love.Joint|love.DistanceJoint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function DistanceJointState(joint, bodyMap, jointMap)
     return {
         dampingRatio = joint:getDampingRatio(),
         frequency = joint:getFrequency(),
@@ -382,14 +397,20 @@ local function DistanceJointState (joint, bodyMap, jointMap)
     }
 end
 
-local function FrictionJointState (joint, bodyMap, jointMap)
+---@param joint love.Joint|love.FrictionJoint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function FrictionJointState(joint, bodyMap, jointMap)
     return {
         maxForce = joint:getMaxForce(),
         maxTorque = joint:getMaxTorque(),
     }
 end
 
-local function GearJointState (joint, bodyMap, jointMap)
+---@param joint love.Joint|love.GearJoint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function GearJointState(joint, bodyMap, jointMap)
     local jointA, jointB = joint:getJoints()
     return {
         joints = { jointMap[jointA], jointMap[jointB] },
@@ -397,46 +418,61 @@ local function GearJointState (joint, bodyMap, jointMap)
     }
 end
 
-local function MotorJointState (joint, bodyMap, jointMap)
+---@param joint love.Joint|love.MotorJoint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function MotorJointState(joint, bodyMap, jointMap)
     return {
         angularOffset = joint:getAngularOffset(),
         linearOffset = { joint:getLinearOffset() },
-        maxForce = joint:getMaxForce(),
-        maxTorque = joint:getMaxTorque(),
-        correctionFactor = joint:getCorrectionFactor(),
+        -- maxForce = joint:getMaxForce(),
+        -- maxTorque = joint:getMaxTorque(),
+        -- correctionFactor = joint:getCorrectionFactor(),
     }
-end	
+end
 
-local function MouseJointState (joint, bodyMap, jointMap)
+---@param joint love.Joint|love.MouseJoint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function MouseJointState(joint, bodyMap, jointMap)
     return {
         dampingRatio = joint:getDampingRatio(),
         frequency = joint:getFrequency(),
         maxForce = joint:getMaxForce(),
         target = { joint:getTarget() },
     }
-end	
+end
 
-local function PrismaticJointState (joint, bodyMap, jointMap)
+---@param joint love.Joint|love.PrismaticJoint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function PrismaticJointState(joint, bodyMap, jointMap)
     return {
         axis = { joint:getAxis() },
         lowerLimit = joint:getLowerLimit(),
         maxMotorForce = joint:getMaxMotorForce(),
         motorSpeed = joint:getMotorSpeed(),
         upperLimit = joint:getUpperLimit(),
-        limitsEnabled = joint:hasLimitsEnabled(),
+        limitsEnabled = joint:areLimitsEnabled(),
         motorEnabled = joint:isMotorEnabled(),
         referenceAngle = joint:getReferenceAngle(),
     }
 end
 
-local function PulleyJointState (joint, bodyMap, jointMap)
+---@param joint love.Joint|love.PulleyJoint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function PulleyJointState(joint, bodyMap, jointMap)
     return {
         groundAnchors = { joint:getGroundAnchors() },
         ratio = joint:getRatio(),
     }
-end	
+end
 
-local function RevoluteJointState (joint, bodyMap, jointMap)
+---@param joint love.Joint|love.RevoluteJoint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function RevoluteJointState(joint, bodyMap, jointMap)
     return {
         lowerLimit = joint:getLowerLimit(),
         maxMotorTorque = joint:getMaxMotorTorque(),
@@ -448,21 +484,30 @@ local function RevoluteJointState (joint, bodyMap, jointMap)
     }
 end
 
-local function RopeJointState (joint, bodyMap, jointMap)
+---@param joint love.Joint|love.RopeJoint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function RopeJointState(joint, bodyMap, jointMap)
     return {
         maxLength = joint:getMaxLength(),
     }
 end
 
-local function WeldJointState (joint, bodyMap, jointMap)
+---@param joint love.Joint|love.WeldJoint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function WeldJointState(joint, bodyMap, jointMap)
     return {
         dampingRatio = joint:getDampingRatio(),
         frequency = joint:getFrequency(),
         referenceAngle = joint:getReferenceAngle(),
     }
-end	
+end
 
-local function WheelJointState (joint, bodyMap, jointMap)
+---@param joint love.Joint|love.WheelJoint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function WheelJointState(joint, bodyMap, jointMap)
     return {
         axis = { joint:getAxis() },
         maxMotorTorque = joint:getMaxMotorTorque(),
@@ -474,7 +519,7 @@ local function WheelJointState (joint, bodyMap, jointMap)
 end
 
 local jointStateByType = {
-    distance = DistanceJointState, 
+    distance = DistanceJointState,
     friction = FrictionJointState,
     gear = GearJointState,
     motor = MotorJointState,
@@ -487,80 +532,92 @@ local jointStateByType = {
     wheel = WheelJointState,
 }
 
-local function JointState (joint, bodyMap, jointMap)
+---@param joint love.Joint
+---@param bodyMap { [love.Body]: string }
+---@param jointMap { [love.Joint]: string }
+local function JointState(joint, bodyMap, jointMap)
     local t = jointStateByType[joint:getType()](joint, bodyMap, jointMap)
-    
+
     if bodyMap then
         local bodyA, bodyB = joint:getBodies()
         t.bodies = { bodyMap[bodyA], bodyMap[bodyB] }
     end
-    
+
     t.anchors = { joint:getAnchors() }
     t.collideConnected = joint:getCollideConnected()
     t.type = joint:getType()
     t.userData = joint:getUserData()
     t.id = tostring(joint)
-    
+
     return t
 end
 
 -- World
 
-local function World (t, world)
+---Load a saved world.
+---@param t table
+---@param world? love.World
+---@return love.World
+---@return table
+local function World(t, world)
     local bodyMap, jointMap = {}, {}
     local lookup = {}
-    
+
     world = world or lp.newWorld()
     world:setGravity(t.gravity[1], t.gravity[2])
     world:setSleepingAllowed(t.sleepingAllowed)
-    
+
     -- index all bodies and add them to the world
     for i, bodyState in ipairs(t.bodyStates) do
         bodyMap[i] = bodyState
         lookup[bodyState.id] = Body(bodyState, world)
-        for i, fixtureState in ipairs(bodyState.fixtureStates)do
+        for i, fixtureState in ipairs(bodyState.fixtureStates) do
             lookup[fixtureState.id] = fixtureState.fixture
         end
     end
-    
+
     -- first pass over joints; index them all
     for i, jointState in ipairs(t.jointStates) do
         jointMap[i] = jointState
     end
-    
+
     -- second pass over joints; add them to the world
     for i, jointState in ipairs(t.jointStates) do
         lookup[jointState.id] = Joint(jointState, bodyMap, jointMap)
     end
-    
+
     return world, lookup
 end
 
-local function sortGears (a, b)
+local function sortGears(a, b)
     return (a:getType() ~= 'gear' and b:getType() == 'gear')
         or tostring(a) < tostring(b)
 end
 
-local function WorldState (world)
-    local bodies = removeDestroyed(world:getBodyList())
-    local joints = removeDestroyed(world:getJointList()) 
+---Save the world's state to a serializable table.
+---@param world love.World
+local function WorldState(world)
+	---@type love.Body[]
+    local bodies = removeDestroyed(world:getBodies())
+	---@type love.Joint[]
+    local joints = removeDestroyed(world:getJoints())
     local bodyStates, bodyMap, jointStates, jointMap = {}, {}, {}, {}
-    
+
     for i, body in ipairs(bodies) do
         bodyMap[body] = i
         bodyStates[i] = BodyState(body)
     end
-    
+
     table.sort(joints, sortGears)
-    
+
     for i, joint in ipairs(joints) do
         jointMap[joint] = i
     end
-    
+
     for i, joint in ipairs(joints) do
         jointStates[i] = JointState(joint, bodyMap, jointMap)
     end
-    
+
     return {
         -- members
         gravity = { world:getGravity() },

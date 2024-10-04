@@ -1,7 +1,7 @@
 local lp, table, tostring, ipairs = love.physics, table, tostring, ipairs
 
 ---LuaJIT optimized table unpack
----@overload fun(t: table): ...: any
+---@overload fun(t: table): ...: unknown
 local function unpack(t)
     return t[1], t[2], t[3], t[4], t[5], t[6], t[7], t[8],
         t[9], t[10], t[11], t[12], t[13], t[14], t[15], t[16]
@@ -26,7 +26,7 @@ end
 ---@field type love.ShapeType
 
 local function ChainShape(t)
-    local shape = lp.newChainShape(false, t.points)
+    local shape = lp.newChainShape(t.loop, t.points)
     shape:setNextVertex(t.nextVertex[1], t.nextVertex[2])
     shape:setPreviousVertex(t.previousVertex[1], t.previousVertex[2])
     return shape
@@ -65,6 +65,7 @@ end
 
 local function ChainShapeState(shape)
     return {
+        loop = false,
         points = { shape:getPoints() },
         nextVertex = { shape:getNextVertex() },
         previousVertex = { shape:getPreviousVertex() },
